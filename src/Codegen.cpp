@@ -5,7 +5,16 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Passes/PassBuilder.h"
 
 using namespace llvm;
 
@@ -14,11 +23,39 @@ static std::unique_ptr<IRBuilder<>> builder;
 static std::unique_ptr<Module> theModule;
 static std::map<std::string, Value *> namedValues;
 
+std::unique_ptr<FunctionPassManager> theFPM;
+std::unique_ptr<LoopAnalysisManager> theLAM;
+std::unique_ptr<FunctionAnalysisManager> theFAM;
+std::unique_ptr<CGSCCAnalysisManager> theCGAM;
+std::unique_ptr<ModuleAnalysisManager> theMAM;
+std::unique_ptr<PassInstrumentationCallbacks> thePIC;
+std::unique_ptr<StandardInstrumentations> theSI;
+
 void InitializeModule()
 {
     theContext = std::make_unique<LLVMContext>();
     theModule = std::make_unique<Module>("Kale JIT", *theContext);
     builder = std::make_unique<IRBuilder<>>(*theContext);
+
+    // theModule->setDataLayout();
+    theFPM = std::make_unique<FunctionPassManager>();
+    theLAM = std::make_unique<LoopAnalysisManager>();
+    theFAM = std::make_unique<FunctionAnalysisManager>();
+    theCGAM = std::make_unique<CGSCCAnalysisManager>();
+    theMAM = std::make_unique<ModuleAnalysisManager>();
+    thePIC = std::make_unique<PassInstrumentationCallbacks>();
+    theSI = std::make_unique<StandardInstrumentations>(true);
+
+    theSI->registerCallbacks(*thePIC, theFAM.get());
+
+    theFPM->addPass(InstCombinePass());
+    theFPM->addPass(ReassociatePass());
+    theFPM->addPass(GVNPass());
+    theFPM->addPass(SimplifyCFGPass());
+    PassBuilder pb;
+    pb.registerModuleAnalyses(*theMAM);
+    pb.registerFunctionAnalyses(*theFAM);
+    pb.crossRegisterProxies(*theLAM, *theFAM, *theCGAM, *theMAM);
 }
 
 Module* GetModule()
@@ -152,4 +189,10 @@ Function* GenerateCodeForFunction(const FunctionAST* functionAST)
     }
     f->eraseFromParent();
     return nullptr;
+}
+
+Function* RunOptmizationPasses(Function* f)
+{
+    theFPM->run(*f, *theFAM);
+    return f;
 }

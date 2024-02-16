@@ -22,6 +22,9 @@ void HandleDefinition()
         }
         std::cout << "=============== LLVM IR ===============" << std::endl;
         llvmFunc->print(llvm::outs());
+        RunOptmizationPasses(llvmFunc);
+        std::cout << "=============== LLVM IR (OPTed) ===============" << std::endl;
+        llvmFunc->print(llvm::outs());
     } else {
         std::cout << "Parse definition failed" << std::endl;
     }
@@ -57,6 +60,9 @@ void HandleTopLevelExpression()
             return;
         }
         std::cout << "=============== LLVM IR ===============" << std::endl;
+        llvmFunc->print(llvm::outs());
+        RunOptmizationPasses(llvmFunc);
+        std::cout << "=============== LLVM IR (OPTed) ===============" << std::endl;
         llvmFunc->print(llvm::outs());
         llvmFunc->eraseFromParent();
     } else {
