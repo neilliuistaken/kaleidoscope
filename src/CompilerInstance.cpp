@@ -64,6 +64,7 @@ void HandleExtern()
             std::cout << "Codegen error occurred" << std::endl;
             return;
         }
+        functionProtoASTs[def->GetName()] = std::move(def);
         std::cout << "=============== LLVM IR ===============" << std::endl;
         llvmFunc->print(llvm::outs());
     } else {
@@ -104,6 +105,9 @@ void HandleTopLevelExpression()
         // All previous generated functions are gone as well. We regenerate them here.
         for (auto& item : functionASTs) {
             (void) GenerateCodeForFunction(item.second.get());
+        }
+        for (auto& item : functionProtoASTs) {
+            (void) GenerateCodeForPrototype(item.second.get());
         }
     } else {
         std::cout << "Parse top-level expression failed" << std::endl;
