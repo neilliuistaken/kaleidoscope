@@ -19,8 +19,8 @@
 using namespace llvm;
 
 static std::unique_ptr<LLVMContext> theContext;
-static std::unique_ptr<IRBuilder<>> builder;
 static std::unique_ptr<Module> theModule;
+static std::unique_ptr<IRBuilder<>> builder;
 static std::map<std::string, Value *> namedValues;
 
 std::unique_ptr<FunctionPassManager> theFPM;
@@ -36,7 +36,10 @@ void InitializeModule()
     theContext = std::make_unique<LLVMContext>();
     theModule = std::make_unique<Module>("Kale JIT", *theContext);
     builder = std::make_unique<IRBuilder<>>(*theContext);
+}
 
+void InitializePassManagers()
+{
     // theModule->setDataLayout();
     theFPM = std::make_unique<FunctionPassManager>();
     theLAM = std::make_unique<LoopAnalysisManager>();
@@ -56,6 +59,17 @@ void InitializeModule()
     pb.registerModuleAnalyses(*theMAM);
     pb.registerFunctionAnalyses(*theFAM);
     pb.crossRegisterProxies(*theLAM, *theFAM, *theCGAM, *theMAM);
+}
+
+
+std::unique_ptr<LLVMContext> GetContextUniquePtr()
+{
+    return std::move(theContext);
+}
+
+std::unique_ptr<Module> GetModuleUniquePtr()
+{
+    return std::move(theModule);
 }
 
 Module* GetModule()

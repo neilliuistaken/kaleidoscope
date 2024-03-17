@@ -4,10 +4,29 @@
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/Module.h"
+#include "Kaleidoscope-JIT.h"
+#include "llvm/ExecutionEngine/JITSymbol.h"
+#include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
 
 #include "AST.h"
 #include "Codegen.h"
 #include "Lexer.h"
+
+using namespace llvm;
+using namespace llvm::orc;
+
+static std::unique_ptr<KaleidoscopeJIT> theJIT;
+static ExitOnError ExitOnErr;
+static std::map<std::string, std::unique_ptr<PrototypeAST>> functionProtoASTs;
+static std::map<std::string, std::unique_ptr<FunctionAST>> functionASTs;
+
+void InitializeJIT()
+{
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
+    theJIT = ExitOnErr(KaleidoscopeJIT::Create());
+}
 
 void HandleDefinition()
 {
@@ -20,12 +39,16 @@ void HandleDefinition()
             std::cout << "Codegen error occurred" << std::endl;
             return;
         }
+        // JIT consumes llvm module, therefore we store AST so the function can be regenerate
+        // again in the future.
+        functionASTs[def->GetPrototype()->GetName()] = std::move(def);
         std::cout << "=============== LLVM IR ===============" << std::endl;
         llvmFunc->print(llvm::outs());
         RunOptmizationPasses(llvmFunc);
         std::cout << "=============== LLVM IR (OPTed) ===============" << std::endl;
         llvmFunc->print(llvm::outs());
-    } else {
+    }
+     else {
         std::cout << "Parse definition failed" << std::endl;
     }
 }
@@ -64,7 +87,24 @@ void HandleTopLevelExpression()
         RunOptmizationPasses(llvmFunc);
         std::cout << "=============== LLVM IR (OPTed) ===============" << std::endl;
         llvmFunc->print(llvm::outs());
-        llvmFunc->eraseFromParent();
+        std::cout << "=============== RESULT ===============" << std::endl;
+        auto rt = theJIT->getMainJITDylib().createResourceTracker();
+        auto module = GetModuleUniquePtr();
+        auto context = GetContextUniquePtr();
+        auto tsm = ThreadSafeModule(std::move(module), std::move(context));
+        ExitOnErr(theJIT->addModule(std::move(tsm), rt));
+        auto exprSymbol = ExitOnErr(theJIT->lookup("__anonymours_expr"));
+        assert(exprSymbol && "__anonymours_expr function not found");
+        auto executorAddr = ExecutorAddr(exprSymbol.getAddress());
+        double (*FP)() = executorAddr.toPtr<double (*)()>();
+        fprintf(stdout, "Evaluated to %f\n", FP());
+        ExitOnErr(rt->remove());
+        // The original module has been moved and consumed. We initialize a new one here.
+        InitializeModule();
+        // All previous generated functions are gone as well. We regenerate them here.
+        for (auto& item : functionASTs) {
+            (void) GenerateCodeForFunction(item.second.get());
+        }
     } else {
         std::cout << "Parse top-level expression failed" << std::endl;
     }
@@ -92,7 +132,9 @@ bool Parse() {
 
 void ReadEvalPrintLoop()
 {
+    InitializeJIT();
     InitializeModule();
+    InitializePassManagers();
     bool run = true;
     while (run) {
         std::cout << "ready > ";
