@@ -1,6 +1,7 @@
 #include "CompilerInstance.h"
 
 #include <iostream>
+#include <variant>
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/Module.h"
@@ -17,8 +18,7 @@ using namespace llvm::orc;
 
 static std::unique_ptr<KaleidoscopeJIT> theJIT;
 static ExitOnError ExitOnErr;
-static std::map<std::string, std::unique_ptr<PrototypeAST>> functionProtoASTs;
-static std::map<std::string, std::unique_ptr<FunctionAST>> functionASTs;
+static std::vector<std::variant<std::unique_ptr<PrototypeAST>, std::unique_ptr<FunctionAST>>> functions;
 
 void InitializeJIT()
 {
@@ -41,7 +41,7 @@ void HandleDefinition()
         }
         // JIT consumes llvm module, therefore we store AST so the function can be regenerate
         // again in the future.
-        functionASTs[def->GetPrototype()->GetName()] = std::move(def);
+        functions.emplace_back(std::move(def));
         std::cout << "=============== LLVM IR ===============" << std::endl;
         llvmFunc->print(llvm::outs());
         RunOptmizationPasses(llvmFunc);
@@ -64,7 +64,7 @@ void HandleExtern()
             std::cout << "Codegen error occurred" << std::endl;
             return;
         }
-        functionProtoASTs[def->GetName()] = std::move(def);
+        functions.emplace_back(std::move(def));
         std::cout << "=============== LLVM IR ===============" << std::endl;
         llvmFunc->print(llvm::outs());
     } else {
@@ -103,11 +103,17 @@ void HandleTopLevelExpression()
         // The original module has been moved and consumed. We initialize a new one here.
         InitializeModule();
         // All previous generated functions are gone as well. We regenerate them here.
-        for (auto& item : functionASTs) {
-            (void) GenerateCodeForFunction(item.second.get());
-        }
-        for (auto& item : functionProtoASTs) {
-            (void) GenerateCodeForPrototype(item.second.get());
+        for (auto& item : functions) {
+            try {
+                auto& functionAST = std::get<std::unique_ptr<FunctionAST>>(item);
+                (void) GenerateCodeForFunction(functionAST.get());
+                continue;
+            } catch (const std::bad_variant_access& ex) { }
+            try {
+                auto& prototypeAST = std::get<std::unique_ptr<PrototypeAST>>(item);
+                (void) GenerateCodeForPrototype(prototypeAST.get());
+                continue;
+            } catch (const std::bad_variant_access& ex) { }
         }
     } else {
         std::cout << "Parse top-level expression failed" << std::endl;
