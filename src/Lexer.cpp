@@ -54,6 +54,15 @@ static int gettok() {
         if (IdentifierStr == "extern") {
             return tok_extern;
         }
+        if (IdentifierStr == "if") {
+            return tok_if;
+        }
+        if (IdentifierStr == "then") {
+            return tok_then;
+        }
+        if (IdentifierStr == "else") {
+            return tok_else;
+        }
         return tok_identifier;
     }
 
@@ -158,7 +167,36 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr()
     return std::make_unique<CallExprAST>(idName, std::move(args));
 }
 
+std::unique_ptr<ExprAST> ParseIfExpr()
+{
+    GetNextToken();
 
+    auto condExpr = ParseExpression();
+    if (!condExpr) {
+        return nullptr;
+    }
+
+    if (currentToken != tok_then) {
+        return LogError("expected then");
+    }
+    GetNextToken();
+
+    auto thenExpr = ParseExpression();
+    if (!thenExpr) {
+        return nullptr;
+    }
+    if (currentToken != tok_else) {
+        return LogError("expected else");
+    }
+    GetNextToken();
+
+    auto elseExpr = ParseExpression();
+    if (!elseExpr) {
+        return nullptr;
+    }
+
+    return std::make_unique<IfExprAST>(std::move(condExpr), std::move(thenExpr), std::move(elseExpr));
+}
 
 static std::unique_ptr<ExprAST> ParsePrimary()
 {
@@ -169,6 +207,8 @@ static std::unique_ptr<ExprAST> ParsePrimary()
             return ParseNumberExpr();
         case '(':
             return ParseParenthesisExpr();
+        case tok_if:
+            return ParseIfExpr();
         default:
             return LogError("unknown token when expecting an expression");    
     }

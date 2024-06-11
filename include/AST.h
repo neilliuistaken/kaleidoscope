@@ -91,6 +91,32 @@ public:
     virtual void PrettyPrint(int indent, int titleIndent) const override;
 };
 
+class IfExprAST : public ExprAST {
+    std::unique_ptr<ExprAST> condExp, thenExp, elseExp;
+
+public:
+    IfExprAST(std::unique_ptr<ExprAST> condExp, std::unique_ptr<ExprAST> thenExp,
+        std::unique_ptr<ExprAST> elseExp)
+        : condExp(std::move(condExp)), thenExp(std::move(thenExp)), elseExp(std::move(elseExp)) { }
+
+    ExprAST* GetCondtionExpr() const
+    {
+        return condExp.get();
+    }
+
+    ExprAST* GetThenExpr() const
+    {
+        return thenExp.get();
+    }
+
+    ExprAST* GetElseExpr() const
+    {
+        return elseExp.get();
+    } 
+
+    void PrettyPrint(int indent, int titleIndent) const override;
+};
+
 class PrototypeAST {
 private:
     std::string name;

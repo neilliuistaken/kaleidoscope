@@ -36,6 +36,17 @@ void CallExprAST::PrettyPrint(int indent, int titleIndent) const {
     }
 }
 
+void IfExprAST::PrettyPrint(int indent, int titleIndent) const {
+    std::cout << std::string(titleIndent, ' ');
+    std::cout << "IfExprAST: " << std::endl;
+    std::cout << std::string(indent + INDENT_SPACES, ' ') << "Condition = ";
+    condExp->PrettyPrint(indent + INDENT_SPACES, 0);
+    std::cout << std::string(indent + INDENT_SPACES, ' ') << "then = ";
+    thenExp->PrettyPrint(indent + INDENT_SPACES, 0);
+    std::cout << std::string(indent + INDENT_SPACES, ' ') << "else = ";
+    elseExp->PrettyPrint(indent + INDENT_SPACES, 0);
+}
+
 void PrototypeAST::PrettyPrint() const
 {
     std::cout << "PrototypeAST: ";
