@@ -2,6 +2,8 @@
 
 #include <map>
 
+#include "llvm/IR/Constant.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -47,7 +49,7 @@ void InitializePassManagers()
     theCGAM = std::make_unique<CGSCCAnalysisManager>();
     theMAM = std::make_unique<ModuleAnalysisManager>();
     thePIC = std::make_unique<PassInstrumentationCallbacks>();
-    theSI = std::make_unique<StandardInstrumentations>(true);
+    theSI = std::make_unique<StandardInstrumentations>(*theContext, true);
 
     theSI->registerCallbacks(*thePIC, theFAM.get());
 
@@ -142,6 +144,49 @@ Value* GenerateCodeForCallExpr(const CallExprAST* callExprAST)
     return builder->CreateCall(callee, argsV, "calltemp");
 }
 
+Value* GenerateCodeForIfExpr(const IfExprAST* ifExprAST) {
+    Value* conditionVal = GenerateCodeForExpr(ifExprAST->GetCondtionExpr());
+    if (!conditionVal) {
+        return nullptr;
+    }
+    conditionVal = builder->CreateFCmpONE(conditionVal, ConstantFP::get(*theContext, APFloat(0.0)), "ifcond");
+    Function* theFunction = builder->GetInsertBlock()->getParent();
+    BasicBlock *thenBB = BasicBlock::Create(*theContext, "then", theFunction);
+    BasicBlock *elseBB = BasicBlock::Create(*theContext, "else");
+    BasicBlock *mergeBB = BasicBlock::Create(*theContext, "ifcont");
+    builder->CreateCondBr(conditionVal, thenBB, elseBB);
+
+    // Generate IR for then expression in the then branch.
+    builder->SetInsertPoint(thenBB);
+    Value* thenVal = GenerateCodeForExpr(ifExprAST->GetThenExpr());
+    if (!thenVal) {
+        return nullptr;
+    }
+    // Jump to mergeBB at the end of then branch.
+    builder->CreateBr(mergeBB);
+    // Get the last block of the then branch (it may be updated in the generation) for phi.
+    thenBB = builder->GetInsertBlock();
+
+    // Generate IR for else expression in the else branch.
+    theFunction->insert(theFunction->end(), elseBB);
+    builder->SetInsertPoint(elseBB);
+    Value* elseVal = GenerateCodeForExpr(ifExprAST->GetElseExpr());
+    if (!elseVal) {
+        return nullptr;
+    }
+    // Jump to mergeBB at the end of then branch.
+    builder->CreateBr(mergeBB);
+    // Get the last block of the else branch (it may be updated in the generation) for phi.
+    elseBB = builder->GetInsertBlock();
+
+    theFunction->insert(theFunction->end(), mergeBB);
+    builder->SetInsertPoint(mergeBB);
+    PHINode* phi = builder->CreatePHI(Type::getDoubleTy(*theContext), 2, "iftmp");
+    phi->addIncoming(thenVal, thenBB);
+    phi->addIncoming(elseVal, elseBB);
+    return phi;
+}
+
 Value* GenerateCodeForExpr(const ExprAST* exprAST)
 {
     auto numberExprAST = dynamic_cast<const NumberExprAST*>(exprAST);
@@ -159,6 +204,10 @@ Value* GenerateCodeForExpr(const ExprAST* exprAST)
     auto callExprAST = dynamic_cast<const CallExprAST*>(exprAST);
     if (callExprAST != nullptr) {
         return GenerateCodeForCallExpr(callExprAST);
+    }
+    auto ifExprAST = dynamic_cast<const IfExprAST*>(exprAST);
+    if (ifExprAST != nullptr) {
+        return GenerateCodeForIfExpr(ifExprAST);
     }
     return nullptr;
 }
